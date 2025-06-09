@@ -1,0 +1,557 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		73EF95042DF65EAD00CAE1B0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 73EF94EB2DF65EAD00CAE1B0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 73EF94F22DF65EAD00CAE1B0;
+			remoteInfo = IntelliNotify;
+		};
+		73EF950E2DF65EAD00CAE1B0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 73EF94EB2DF65EAD00CAE1B0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 73EF94F22DF65EAD00CAE1B0;
+			remoteInfo = IntelliNotify;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		73EF94F32DF65EAD00CAE1B0 /* IntelliNotify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IntelliNotify.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		73EF95032DF65EAD00CAE1B0 /* IntelliNotifyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IntelliNotifyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		73EF950D2DF65EAD00CAE1B0 /* IntelliNotifyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IntelliNotifyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		73EF94F52DF65EAD00CAE1B0 /* IntelliNotify */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = IntelliNotify;
+			sourceTree = "<group>";
+		};
+		73EF95062DF65EAD00CAE1B0 /* IntelliNotifyTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = IntelliNotifyTests;
+			sourceTree = "<group>";
+		};
+		73EF95102DF65EAD00CAE1B0 /* IntelliNotifyUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = IntelliNotifyUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		73EF94F02DF65EAD00CAE1B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73EF95002DF65EAD00CAE1B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73EF950A2DF65EAD00CAE1B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		73EF94EA2DF65EAD00CAE1B0 = {
+			isa = PBXGroup;
+			children = (
+				73EF94F52DF65EAD00CAE1B0 /* IntelliNotify */,
+				73EF95062DF65EAD00CAE1B0 /* IntelliNotifyTests */,
+				73EF95102DF65EAD00CAE1B0 /* IntelliNotifyUITests */,
+				73EF94F42DF65EAD00CAE1B0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		73EF94F42DF65EAD00CAE1B0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				73EF94F32DF65EAD00CAE1B0 /* IntelliNotify.app */,
+				73EF95032DF65EAD00CAE1B0 /* IntelliNotifyTests.xctest */,
+				73EF950D2DF65EAD00CAE1B0 /* IntelliNotifyUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		73EF94F22DF65EAD00CAE1B0 /* IntelliNotify */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 73EF95172DF65EAD00CAE1B0 /* Build configuration list for PBXNativeTarget "IntelliNotify" */;
+			buildPhases = (
+				73EF94EF2DF65EAD00CAE1B0 /* Sources */,
+				73EF94F02DF65EAD00CAE1B0 /* Frameworks */,
+				73EF94F12DF65EAD00CAE1B0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				73EF94F52DF65EAD00CAE1B0 /* IntelliNotify */,
+			);
+			name = IntelliNotify;
+			packageProductDependencies = (
+			);
+			productName = IntelliNotify;
+			productReference = 73EF94F32DF65EAD00CAE1B0 /* IntelliNotify.app */;
+			productType = "com.apple.product-type.application";
+		};
+		73EF95022DF65EAD00CAE1B0 /* IntelliNotifyTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 73EF951A2DF65EAD00CAE1B0 /* Build configuration list for PBXNativeTarget "IntelliNotifyTests" */;
+			buildPhases = (
+				73EF94FF2DF65EAD00CAE1B0 /* Sources */,
+				73EF95002DF65EAD00CAE1B0 /* Frameworks */,
+				73EF95012DF65EAD00CAE1B0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				73EF95052DF65EAD00CAE1B0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				73EF95062DF65EAD00CAE1B0 /* IntelliNotifyTests */,
+			);
+			name = IntelliNotifyTests;
+			packageProductDependencies = (
+			);
+			productName = IntelliNotifyTests;
+			productReference = 73EF95032DF65EAD00CAE1B0 /* IntelliNotifyTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		73EF950C2DF65EAD00CAE1B0 /* IntelliNotifyUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 73EF951D2DF65EAD00CAE1B0 /* Build configuration list for PBXNativeTarget "IntelliNotifyUITests" */;
+			buildPhases = (
+				73EF95092DF65EAD00CAE1B0 /* Sources */,
+				73EF950A2DF65EAD00CAE1B0 /* Frameworks */,
+				73EF950B2DF65EAD00CAE1B0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				73EF950F2DF65EAD00CAE1B0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				73EF95102DF65EAD00CAE1B0 /* IntelliNotifyUITests */,
+			);
+			name = IntelliNotifyUITests;
+			packageProductDependencies = (
+			);
+			productName = IntelliNotifyUITests;
+			productReference = 73EF950D2DF65EAD00CAE1B0 /* IntelliNotifyUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		73EF94EB2DF65EAD00CAE1B0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					73EF94F22DF65EAD00CAE1B0 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+					73EF95022DF65EAD00CAE1B0 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = 73EF94F22DF65EAD00CAE1B0;
+					};
+					73EF950C2DF65EAD00CAE1B0 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = 73EF94F22DF65EAD00CAE1B0;
+					};
+				};
+			};
+			buildConfigurationList = 73EF94EE2DF65EAD00CAE1B0 /* Build configuration list for PBXProject "IntelliNotify" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 73EF94EA2DF65EAD00CAE1B0;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 73EF94F42DF65EAD00CAE1B0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				73EF94F22DF65EAD00CAE1B0 /* IntelliNotify */,
+				73EF95022DF65EAD00CAE1B0 /* IntelliNotifyTests */,
+				73EF950C2DF65EAD00CAE1B0 /* IntelliNotifyUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		73EF94F12DF65EAD00CAE1B0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73EF95012DF65EAD00CAE1B0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73EF950B2DF65EAD00CAE1B0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		73EF94EF2DF65EAD00CAE1B0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73EF94FF2DF65EAD00CAE1B0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73EF95092DF65EAD00CAE1B0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		73EF95052DF65EAD00CAE1B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 73EF94F22DF65EAD00CAE1B0 /* IntelliNotify */;
+			targetProxy = 73EF95042DF65EAD00CAE1B0 /* PBXContainerItemProxy */;
+		};
+		73EF950F2DF65EAD00CAE1B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 73EF94F22DF65EAD00CAE1B0 /* IntelliNotify */;
+			targetProxy = 73EF950E2DF65EAD00CAE1B0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		73EF95152DF65EAD00CAE1B0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		73EF95162DF65EAD00CAE1B0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		73EF95182DF65EAD00CAE1B0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"IntelliNotify/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Ray.IntelliNotify;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		73EF95192DF65EAD00CAE1B0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"IntelliNotify/Preview Content\"";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Ray.IntelliNotify;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		73EF951B2DF65EAD00CAE1B0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Ray.IntelliNotifyTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/IntelliNotify.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/IntelliNotify";
+			};
+			name = Debug;
+		};
+		73EF951C2DF65EAD00CAE1B0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Ray.IntelliNotifyTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/IntelliNotify.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/IntelliNotify";
+			};
+			name = Release;
+		};
+		73EF951E2DF65EAD00CAE1B0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Ray.IntelliNotifyUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = IntelliNotify;
+			};
+			name = Debug;
+		};
+		73EF951F2DF65EAD00CAE1B0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = Ray.IntelliNotifyUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = IntelliNotify;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		73EF94EE2DF65EAD00CAE1B0 /* Build configuration list for PBXProject "IntelliNotify" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73EF95152DF65EAD00CAE1B0 /* Debug */,
+				73EF95162DF65EAD00CAE1B0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		73EF95172DF65EAD00CAE1B0 /* Build configuration list for PBXNativeTarget "IntelliNotify" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73EF95182DF65EAD00CAE1B0 /* Debug */,
+				73EF95192DF65EAD00CAE1B0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		73EF951A2DF65EAD00CAE1B0 /* Build configuration list for PBXNativeTarget "IntelliNotifyTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73EF951B2DF65EAD00CAE1B0 /* Debug */,
+				73EF951C2DF65EAD00CAE1B0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		73EF951D2DF65EAD00CAE1B0 /* Build configuration list for PBXNativeTarget "IntelliNotifyUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73EF951E2DF65EAD00CAE1B0 /* Debug */,
+				73EF951F2DF65EAD00CAE1B0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 73EF94EB2DF65EAD00CAE1B0 /* Project object */;
+}
