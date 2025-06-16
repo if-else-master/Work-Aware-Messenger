@@ -136,7 +136,7 @@ struct AnalysisResult: Codable {
 
 // MARK: - Gemini API 服務
 class GeminiService: ObservableObject {
-    private let apiKey = "YOUR_GEMINI_API_KEY" // 請替換為實際的 API Key
+    private let apiKey = "" // 請替換為實際的 API Key
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     
     func analyzeMessageAndWorkStatus(
