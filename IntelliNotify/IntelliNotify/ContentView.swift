@@ -3,6 +3,7 @@ import Foundation
 import UserNotifications
 import Combine
 import EventKit
+import Intents
 
 #if canImport(MessageUI)
 import MessageUI
@@ -116,7 +117,7 @@ struct UserActivityData: Codable {
     let upcomingEvents: [String]
 }
 
-// Gemini API 相關結構保持不變
+// Gemini API 相關結構
 struct GeminiRequest: Codable {
     let contents: [GeminiContent]
     let generationConfig: GeminiGenerationConfig
@@ -153,6 +154,30 @@ struct AnalysisResult: Codable {
     let confidence: Double
 }
 
+struct DelayedNotification: Identifiable {
+    let id = UUID()
+    let message: Message
+    let scheduledTime: Date
+    let reason: String
+}
+
+struct NotificationSettings {
+    var enableSmartDelay: Bool = true
+    var respectFocusMode: Bool = true
+    var workHoursStart: Int = 9
+    var workHoursEnd: Int = 18
+    var allowUrgentDuringFocus: Bool = true
+    var batchLowPriorityMessages: Bool = true
+}
+
+enum NotificationDelayStrategy {
+    case immediate
+    case delayUntilFree
+    case delayUntilEndOfMeeting
+    case batchAtEndOfDay
+    case suppress
+}
+
 // MARK: - API 設定管理
 class APISettingsManager: ObservableObject {
     @Published var apiKey: String = ""
@@ -183,7 +208,51 @@ class APISettingsManager: ObservableObject {
     }
 }
 
-// MARK: - EventKit 服務
+// MARK: - Focus 狀態管理服務
+class FocusStatusService: ObservableObject {
+    @Published var isFocused: Bool = false
+    @Published var authorizationStatus: INFocusStatusAuthorizationStatus = .notDetermined
+    @Published var isAuthorized: Bool = false
+    
+    init() {
+        checkAuthorizationStatus()
+    }
+    
+    func checkAuthorizationStatus() {
+        authorizationStatus = INFocusStatusCenter.default.authorizationStatus
+        isAuthorized = authorizationStatus == .authorized
+        
+        if isAuthorized {
+            updateFocusStatus()
+        }
+    }
+    
+    func requestAuthorization() {
+        INFocusStatusCenter.default.requestAuthorization { [weak self] status in
+            DispatchQueue.main.async {
+                self?.authorizationStatus = status
+                self?.isAuthorized = status == .authorized
+                
+                if self?.isAuthorized == true {
+                    self?.updateFocusStatus()
+                }
+            }
+        }
+    }
+    
+    private func updateFocusStatus() {
+        guard isAuthorized else { return }
+        isFocused = INFocusStatusCenter.default.focusStatus.isFocused ?? false
+    }
+    
+    func observeFocusChanges() {
+        Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            self?.updateFocusStatus()
+        }
+    }
+}
+
+// MARK: - 行事曆服務
 class CalendarService: ObservableObject {
     @Published var events: [CalendarEvent] = []
     @Published var authorizationStatus: EKAuthorizationStatus = .notDetermined
@@ -206,12 +275,17 @@ class CalendarService: ObservableObject {
     }
     
     func requestCalendarAccess() {
+        print("開始請求行事曆權限...")
+        
         eventStore.requestAccess(to: .event) { [weak self] granted, error in
+            print("權限請求結果: granted=\(granted), error=\(String(describing: error))")
+            
             DispatchQueue.main.async {
                 self?.authorizationStatus = EKEventStore.authorizationStatus(for: .event)
                 self?.isAuthorized = granted
                 
                 if granted {
+                    print("行事曆權限已授予，開始載入事件")
                     self?.loadEvents()
                 } else {
                     print("行事曆存取被拒絕: \(error?.localizedDescription ?? "未知錯誤")")
@@ -241,14 +315,12 @@ class CalendarService: ObservableObject {
         }
         
         if !currentEvents.isEmpty {
-            // 如果有正在進行的事件，檢查是否為工作相關
             let hasWorkEvent = currentEvents.contains { event in
                 isWorkRelatedEvent(event)
             }
             
             currentWorkStatus = hasWorkEvent ? .working : .inMeeting
         } else {
-            // 檢查接下來一小時內是否有事件
             let oneHourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now
             let upcomingEvents = events.filter { event in
                 event.startDate >= now && event.startDate <= oneHourLater
@@ -281,7 +353,7 @@ class CalendarService: ObservableObject {
         event.calendar = eventStore.defaultCalendarForNewEvents
         
         try eventStore.save(event, span: .thisEvent)
-        loadEvents() // 重新載入事件
+        loadEvents()
     }
     
     func updateEvent(eventId: String, title: String? = nil, startDate: Date? = nil, endDate: Date? = nil, notes: String? = nil, location: String? = nil) throws {
@@ -300,7 +372,7 @@ class CalendarService: ObservableObject {
         if let location = location { event.location = location }
         
         try eventStore.save(event, span: .thisEvent)
-        loadEvents() // 重新載入事件
+        loadEvents()
     }
     
     func deleteEvent(eventId: String) throws {
@@ -313,7 +385,7 @@ class CalendarService: ObservableObject {
         }
         
         try eventStore.remove(event, span: .thisEvent)
-        loadEvents() // 重新載入事件
+        loadEvents()
     }
     
     func getCurrentActivityData() -> UserActivityData {
@@ -344,6 +416,186 @@ class CalendarService: ObservableObject {
         #else
         return "Unknown"
         #endif
+    }
+}
+
+// MARK: - 智能通知管理服務
+class SmartNotificationService: ObservableObject {
+    @Published var pendingNotifications: [DelayedNotification] = []
+    @Published var notificationSettings = NotificationSettings()
+    
+    private let focusService = FocusStatusService()
+    private let calendarService = CalendarService()
+    
+    func scheduleSmartNotification(
+        for message: Message,
+        priority: MessagePriority,
+        currentContext: UserActivityData
+    ) {
+        let delayStrategy = determineDelayStrategy(
+            priority: priority,
+            isFocused: focusService.isFocused,
+            workStatus: currentContext.workStatus
+        )
+        
+        switch delayStrategy {
+        case .immediate:
+            sendImmediateNotification(message: message, priority: priority)
+            
+        case .delayUntilFree:
+            scheduleDelayedNotification(
+                message: message,
+                delay: calculateOptimalDelay(currentContext: currentContext),
+                reason: "等待空閒時間通知"
+            )
+            
+        case .delayUntilEndOfMeeting:
+            if let nextFreeTime = findNextFreeTime() {
+                scheduleDelayedNotification(
+                    message: message,
+                    delay: nextFreeTime.timeIntervalSinceNow,
+                    reason: "會議結束後通知"
+                )
+            } else {
+                scheduleDelayedNotification(
+                    message: message,
+                    delay: 30 * 60,
+                    reason: "稍後通知"
+                )
+            }
+            
+        case .batchAtEndOfDay:
+            addToBatchNotification(message: message)
+            
+        case .suppress:
+            break
+        }
+    }
+    
+    private func determineDelayStrategy(
+        priority: MessagePriority,
+        isFocused: Bool,
+        workStatus: WorkStatus
+    ) -> NotificationDelayStrategy {
+        if priority == .urgent {
+            return .immediate
+        }
+        
+        if isFocused {
+            switch priority {
+            case .urgent:
+                return .immediate
+            case .important:
+                return workStatus == .inMeeting ? .delayUntilEndOfMeeting : .delayUntilFree
+            case .normal:
+                return .delayUntilFree
+            case .low:
+                return .batchAtEndOfDay
+            case .unknown:
+                return .suppress
+            }
+        }
+        
+        if workStatus == .inMeeting {
+            switch priority {
+            case .urgent:
+                return .immediate
+            case .important:
+                return .delayUntilEndOfMeeting
+            case .normal, .low:
+                return .delayUntilFree
+            case .unknown:
+                return .suppress
+            }
+        }
+        
+        return .immediate
+    }
+    
+    private func calculateOptimalDelay(currentContext: UserActivityData) -> TimeInterval {
+        switch currentContext.workStatus {
+        case .working:
+            return 15 * 60
+        case .inMeeting:
+            return findNextFreeTime()?.timeIntervalSinceNow ?? 30 * 60
+        case .resting:
+            return 5 * 60
+        case .free:
+            return 0
+        case .unknown:
+            return 0
+        }
+    }
+    
+    private func findNextFreeTime() -> Date? {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        let upcomingEvents = calendarService.events.filter { $0.startDate > now }
+            .sorted { $0.startDate < $1.startDate }
+        
+        for event in upcomingEvents {
+            if event.startDate.timeIntervalSinceNow > 5 * 60 {
+                return event.startDate
+            }
+        }
+        
+        return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: calendar.date(byAdding: .day, value: 1, to: now)!)
+    }
+    
+    private func sendImmediateNotification(message: Message, priority: MessagePriority) {
+        let content = UNMutableNotificationContent()
+        content.title = "即時訊息 - \(message.sender)"
+        content.body = message.content
+        content.sound = priority == .urgent ? .defaultCritical : .default
+        
+        let request = UNNotificationRequest(
+            identifier: "immediate_\(message.id.uuidString)",
+            content: content,
+            trigger: nil
+        )
+        
+        UNUserNotificationCenter.current().add(request)
+    }
+    
+    private func scheduleDelayedNotification(message: Message, delay: TimeInterval, reason: String) {
+        let delayedNotification = DelayedNotification(
+            message: message,
+            scheduledTime: Date().addingTimeInterval(delay),
+            reason: reason
+        )
+        
+        pendingNotifications.append(delayedNotification)
+        
+        let content = UNMutableNotificationContent()
+        content.title = "延遲訊息 - \(message.sender)"
+        content.body = message.content
+        content.sound = .default
+        content.userInfo = ["reason": reason]
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "delayed_\(message.id.uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request)
+    }
+    
+    private func addToBatchNotification(message: Message) {
+        let delayedNotification = DelayedNotification(
+            message: message,
+            scheduledTime: endOfDay(),
+            reason: "日終摘要"
+        )
+        
+        pendingNotifications.append(delayedNotification)
+    }
+    
+    private func endOfDay() -> Date {
+        let calendar = Calendar.current
+        return calendar.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date()
     }
 }
 
@@ -491,6 +743,7 @@ class MessageService: ObservableObject {
     
     let geminiService = GeminiService()
     private let calendarService = CalendarService()
+    private let smartNotificationService = SmartNotificationService()
     
     func processIncomingMessage(_ message: Message) {
         let activityData = calendarService.getCurrentActivityData()
@@ -502,173 +755,248 @@ class MessageService: ObservableObject {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let analysis):
-                    self?.handleAnalysisResult(message: message, analysis: analysis)
+                    self?.handleAnalysisResult(message: message, analysis: analysis, activityData: activityData)
                 case .failure(let error):
                     print("分析失敗: \(error)")
-                    self?.handleDefaultMessage(message)
+                    self?.handleDefaultMessage(message, activityData: activityData)
                 }
             }
         }
     }
     
-    private func handleAnalysisResult(message: Message, analysis: AnalysisResult) {
+    private func handleAnalysisResult(message: Message, analysis: AnalysisResult, activityData: UserActivityData) {
         var updatedMessage = message
         updatedMessage.priority = MessagePriority(rawValue: analysis.messagePriority) ?? .normal
         updatedMessage.isProcessed = true
         
         messages.append(updatedMessage)
         
-        if analysis.shouldNotifyImmediately {
-            sendImmediateNotification(message: updatedMessage, reasoning: analysis.reasoning)
-        } else {
-            pendingMessages.append(updatedMessage)
-            scheduleDelayedNotification(message: updatedMessage)
-        }
+        smartNotificationService.scheduleSmartNotification(
+            for: updatedMessage,
+            priority: updatedMessage.priority,
+            currentContext: activityData
+        )
     }
     
-    private func handleDefaultMessage(_ message: Message) {
+    private func handleDefaultMessage(_ message: Message, activityData: UserActivityData) {
         var updatedMessage = message
         updatedMessage.priority = .normal
         updatedMessage.isProcessed = true
         messages.append(updatedMessage)
-        pendingMessages.append(updatedMessage)
-    }
-    
-    private func sendImmediateNotification(message: Message, reasoning: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "重要訊息 - \(message.sender)"
-        content.body = message.content
-        content.sound = .default
-        content.userInfo = ["reasoning": reasoning]
         
-        let request = UNNotificationRequest(
-            identifier: message.id.uuidString,
-            content: content,
-            trigger: nil
+        smartNotificationService.scheduleSmartNotification(
+            for: updatedMessage,
+            priority: .normal,
+            currentContext: activityData
         )
-        
-        UNUserNotificationCenter.current().add(request)
-    }
-    
-    private func scheduleDelayedNotification(message: Message) {
-        let delay: TimeInterval = 30 * 60 // 30分鐘後通知
-        
-        let content = UNMutableNotificationContent()
-        content.title = "訊息提醒 - \(message.sender)"
-        content.body = message.content
-        content.sound = .default
-        
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
-        let request = UNNotificationRequest(
-            identifier: "delayed_\(message.id.uuidString)",
-            content: content,
-            trigger: trigger
-        )
-        
-        UNUserNotificationCenter.current().add(request)
     }
 }
 
-// MARK: - 主要視圖
-struct ContentView: View {
-    @StateObject private var messageService = MessageService()
-    @StateObject private var calendarService = CalendarService()
-    @State private var showingAddMessage = false
-    @State private var showingAPISettings = false
-    @State private var showingCalendarView = false
-    @State private var newMessageContent = ""
-    @State private var newMessageSender = ""
+// MARK: - Focus 權限橫幅
+struct FocusPermissionBanner: View {
+    @ObservedObject var focusService: FocusStatusService
     
     var body: some View {
-        NavigationView {
-            VStack {
-                // API 狀態提示
-                if !messageService.geminiService.apiSettingsManager.isAPIConfigured {
-                    APIStatusBanner(showingAPISettings: $showingAPISettings)
-                }
-                
-                // 行事曆權限狀態提示
-                if !calendarService.isAuthorized {
-                    CalendarPermissionBanner(calendarService: calendarService)
-                }
-                
-                // 狀態卡片
-                StatusCard(calendarService: calendarService)
-                
-                // 訊息列表
-                List {
-                    Section("處理中的訊息") {
-                        ForEach(messageService.messages) { message in
-                            MessageRow(message: message)
+        HStack {
+            Image(systemName: "moon.circle")
+                .foregroundColor(.purple)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("需要專注模式權限")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Text("允許存取專注狀態以提供智能通知延遲")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Button("授權") {
+                focusService.requestAuthorization()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding()
+        .background(Color.purple.opacity(0.1))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - 智能狀態卡片視圖
+struct SmartStatusCard: View {
+    @ObservedObject var calendarService: CalendarService
+    @ObservedObject var focusService: FocusStatusService
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("當前狀態")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    HStack {
+                        Text(calendarService.currentWorkStatus.displayName)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        if focusService.isFocused {
+                            Image(systemName: "moon.fill")
+                                .foregroundColor(.purple)
+                                .font(.caption)
                         }
                     }
-                    
-                    if !messageService.pendingMessages.isEmpty {
-                        Section("待處理訊息") {
-                            ForEach(messageService.pendingMessages) { message in
-                                MessageRow(message: message)
+                }
+                Spacer()
+                
+                VStack(alignment: .trailing) {
+                    Text("今日事件")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(calendarService.events.filter { Calendar.current.isDateInToday($0.startDate) }.count)個")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                }
+            }
+            
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("通知策略")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(getNotificationStrategy())
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                Spacer()
+            }
+            
+            if calendarService.isAuthorized {
+                let todayEvents = calendarService.events.filter { Calendar.current.isDateInToday($0.startDate) }.prefix(3)
+                if !todayEvents.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("今日行程")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        ForEach(Array(todayEvents), id: \.id) { event in
+                            HStack {
+                                Text(event.title)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(event.startDate, style: .time)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("智能訊息管理")
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        showingCalendarView = true
-                    }) {
-                        Image(systemName: "calendar")
-                            .foregroundColor(calendarService.isAuthorized ? .blue : .gray)
-                    }
-                    
-                    Button(action: {
-                        showingAPISettings = true
-                    }) {
-                        Image(systemName: messageService.geminiService.apiSettingsManager.isAPIConfigured ? "key.fill" : "key")
-                            .foregroundColor(messageService.geminiService.apiSettingsManager.isAPIConfigured ? .green : .orange)
-                    }
-                    
-                    Button("添加測試訊息") {
-                        showingAddMessage = true
-                    }
-                }
-            }
-            .sheet(isPresented: $showingAddMessage) {
-                AddMessageView(
-                    messageContent: $newMessageContent,
-                    messageSender: $newMessageSender,
-                    onAdd: { content, sender in
-                        let message = Message(
-                            content: content,
-                            sender: sender,
-                            timestamp: Date()
-                        )
-                        messageService.processIncomingMessage(message)
-                        showingAddMessage = false
-                        newMessageContent = ""
-                        newMessageSender = ""
-                    }
-                )
-            }
-            .sheet(isPresented: $showingAPISettings) {
-                APISettingsView(apiSettingsManager: messageService.geminiService.apiSettingsManager)
-            }
-            .sheet(isPresented: $showingCalendarView) {
-                CalendarManagementView(calendarService: calendarService)
-            }
         }
-        .onAppear {
-            requestNotificationPermission()
-        }
+        .padding()
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(12)
+        .padding(.horizontal)
     }
     
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            if granted {
-                print("通知權限已授予")
-            } else {
-                print("通知權限被拒絕")
+    private func getNotificationStrategy() -> String {
+        if focusService.isFocused {
+            return "專注模式：智能延遲"
+        }
+        
+        switch calendarService.currentWorkStatus {
+        case .working:
+            return "工作中：重要訊息延遲"
+        case .inMeeting:
+            return "會議中：會後通知"
+        case .resting:
+            return "休息中：短暫延遲"
+        case .free:
+            return "空閒：即時通知"
+        case .unknown:
+            return "標準模式"
+        }
+    }
+}
+
+// MARK: - 通知設定視圖
+struct NotificationSettingsView: View {
+    @Environment(\.presentationMode) var presentationMode
+    @State private var settings = NotificationSettings()
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("智能延遲設定") {
+                    Toggle("啟用智能延遲", isOn: $settings.enableSmartDelay)
+                    Toggle("尊重專注模式", isOn: $settings.respectFocusMode)
+                    Toggle("專注時允許緊急訊息", isOn: $settings.allowUrgentDuringFocus)
+                        .disabled(!settings.respectFocusMode)
+                }
+                
+                Section("工作時間設定") {
+                    HStack {
+                        Text("開始時間")
+                        Spacer()
+                        Picker("開始時間", selection: $settings.workHoursStart) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text("\(hour):00").tag(hour)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(width: 100, height: 100)
+                    }
+                    
+                    HStack {
+                        Text("結束時間")
+                        Spacer()
+                        Picker("結束時間", selection: $settings.workHoursEnd) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                Text("\(hour):00").tag(hour)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(width: 100, height: 100)
+                    }
+                }
+                
+                Section("批量通知") {
+                    Toggle("低優先級訊息批量處理", isOn: $settings.batchLowPriorityMessages)
+                    
+                    if settings.batchLowPriorityMessages {
+                        Text("低優先級訊息將在工作時間結束時統一發送摘要")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Section("說明") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("智能延遲功能")
+                            .font(.headline)
+                        Text("• 緊急訊息：無論何時都會立即通知")
+                            .font(.caption)
+                        Text("• 重要訊息：根據當前狀態智能延遲")
+                            .font(.caption)
+                        Text("• 一般訊息：在空閒時間通知")
+                            .font(.caption)
+                        Text("• 低優先級：批量處理或延遲到工作時間結束")
+                            .font(.caption)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("通知設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
             }
         }
     }
@@ -690,11 +1018,16 @@ struct CalendarPermissionBanner: View {
                 Text("允許存取行事曆以提供更精確的工作狀態分析")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                
+                Text("狀態: \(authorizationStatusText)")
+                    .font(.caption)
+                    .foregroundColor(.orange)
             }
             
             Spacer()
             
             Button("授權") {
+                print("用戶點擊授權按鈕")
                 calendarService.requestCalendarAccess()
             }
             .buttonStyle(.borderedProminent)
@@ -704,6 +1037,25 @@ struct CalendarPermissionBanner: View {
         .background(Color.blue.opacity(0.1))
         .cornerRadius(12)
         .padding(.horizontal)
+    }
+    
+    private var authorizationStatusText: String {
+        switch calendarService.authorizationStatus {
+        case .notDetermined:
+            return "未請求"
+        case .restricted:
+            return "受限制"
+        case .denied:
+            return "被拒絕"
+        case .authorized:
+            return "已授權"
+        case .fullAccess:
+            return "完全存取"
+        case .writeOnly:
+            return "僅寫入"
+        @unknown default:
+            return "未知"
+        }
     }
 }
 
@@ -735,63 +1087,6 @@ struct APIStatusBanner: View {
         }
         .padding()
         .background(Color.orange.opacity(0.1))
-        .cornerRadius(12)
-        .padding(.horizontal)
-    }
-}
-
-// MARK: - 狀態卡片視圖
-struct StatusCard: View {
-    @ObservedObject var calendarService: CalendarService
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("工作狀態")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(calendarService.currentWorkStatus.displayName)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                }
-                Spacer()
-                
-                VStack(alignment: .trailing) {
-                    Text("今日事件")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(calendarService.events.filter { Calendar.current.isDateInToday($0.startDate) }.count)個")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                }
-            }
-            
-            if calendarService.isAuthorized {
-                let todayEvents = calendarService.events.filter { Calendar.current.isDateInToday($0.startDate) }.prefix(3)
-                if !todayEvents.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("今日行程")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        ForEach(Array(todayEvents), id: \.id) { event in
-                            HStack {
-                                Text(event.title)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(event.startDate, style: .time)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color.gray.opacity(0.1))
         .cornerRadius(12)
         .padding(.horizontal)
     }
@@ -943,7 +1238,7 @@ struct AddEventView: View {
     
     @State private var title = ""
     @State private var startDate = Date()
-    @State private var endDate = Date().addingTimeInterval(3600) // 1小時後
+    @State private var endDate = Date().addingTimeInterval(3600)
     @State private var notes = ""
     @State private var location = ""
     @State private var isAllDay = false
@@ -1384,6 +1679,127 @@ struct AddMessageView: View {
                     }
                     .disabled(messageContent.isEmpty || messageSender.isEmpty)
                 }
+            }
+        }
+    }
+}
+
+// MARK: - 主要視圖
+struct ContentView: View {
+    @StateObject private var messageService = MessageService()
+    @StateObject private var calendarService = CalendarService()
+    @StateObject private var focusService = FocusStatusService()
+    @State private var showingAddMessage = false
+    @State private var showingAPISettings = false
+    @State private var showingCalendarView = false
+    @State private var showingNotificationSettings = false
+    @State private var newMessageContent = ""
+    @State private var newMessageSender = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                if !messageService.geminiService.apiSettingsManager.isAPIConfigured {
+                    APIStatusBanner(showingAPISettings: $showingAPISettings)
+                }
+                
+                if !calendarService.isAuthorized {
+                    CalendarPermissionBanner(calendarService: calendarService)
+                }
+                
+                if !focusService.isAuthorized {
+                    FocusPermissionBanner(focusService: focusService)
+                }
+                
+                SmartStatusCard(
+                    calendarService: calendarService,
+                    focusService: focusService
+                )
+                
+                List {
+                    Section("處理中的訊息") {
+                        ForEach(messageService.messages) { message in
+                            MessageRow(message: message)
+                        }
+                    }
+                    
+                    if !messageService.pendingMessages.isEmpty {
+                        Section("待處理訊息") {
+                            ForEach(messageService.pendingMessages) { message in
+                                MessageRow(message: message)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("智能通知管理")
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingNotificationSettings = true
+                    }) {
+                        Image(systemName: "bell.badge")
+                            .foregroundColor(.purple)
+                    }
+                    
+                    Button(action: {
+                        showingCalendarView = true
+                    }) {
+                        Image(systemName: "calendar")
+                            .foregroundColor(calendarService.isAuthorized ? .blue : .gray)
+                    }
+                    
+                    Button(action: {
+                        showingAPISettings = true
+                    }) {
+                        Image(systemName: messageService.geminiService.apiSettingsManager.isAPIConfigured ? "key.fill" : "key")
+                            .foregroundColor(messageService.geminiService.apiSettingsManager.isAPIConfigured ? .green : .orange)
+                    }
+                    
+                    Button("添加測試訊息") {
+                        showingAddMessage = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddMessage) {
+                AddMessageView(
+                    messageContent: $newMessageContent,
+                    messageSender: $newMessageSender,
+                    onAdd: { content, sender in
+                        let message = Message(
+                            content: content,
+                            sender: sender,
+                            timestamp: Date()
+                        )
+                        messageService.processIncomingMessage(message)
+                        showingAddMessage = false
+                        newMessageContent = ""
+                        newMessageSender = ""
+                    }
+                )
+            }
+            .sheet(isPresented: $showingAPISettings) {
+                APISettingsView(apiSettingsManager: messageService.geminiService.apiSettingsManager)
+            }
+            .sheet(isPresented: $showingCalendarView) {
+                CalendarManagementView(calendarService: calendarService)
+            }
+            .sheet(isPresented: $showingNotificationSettings) {
+                NotificationSettingsView()
+            }
+        }
+        .onAppear {
+            requestNotificationPermission()
+            focusService.observeFocusChanges()
+        }
+    }
+    
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound, .criticalAlert]) { granted, error in
+            if granted {
+                print("通知權限已授予")
+            } else {
+                print("通知權限被拒絕")
             }
         }
     }
