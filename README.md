@@ -1,5 +1,4 @@
 # IntelliNotify - AI 訊息管理系統
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ## 功能概述
 
