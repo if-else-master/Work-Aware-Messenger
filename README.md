@@ -74,6 +74,53 @@ IntelliNotify 是一個智能訊息管理系統，它能夠根據用戶的工作
 - 訊息內容通過 Gemini AI 進行分析
 - 不存儲或分享用戶個人數據
 
+## 程式碼結構
+
+### 主要檔案位置
+- `ContentView.swift`: 主視圖和應用程式入口
+  - 包含訊息列表顯示
+  - 狀態卡片顯示
+  - 新增訊息功能
+
+### 功能開發
+1. **訊息處理流程** 
+```swift
+func processIncomingMessage(_ message: Message) {
+    let activityData = deviceService.getCurrentActivityData()
+    
+    geminiService.analyzeMessageAndWorkStatus(
+        message: message,
+        activityData: activityData,
+        screenTimeData: deviceService.screenTimeData
+    ) { [weak self] result in
+        // 處理分析結果
+    }
+}
+```
+
+2. **AI 分析訊息重要性** 
+```swift
+func analyzeMessageAndWorkStatus(
+    message: Message,
+    activityData: UserActivityData,
+    screenTimeData: [String: TimeInterval],
+    completion: @escaping (Result<AnalysisResult, Error>) -> Void
+) {
+    // AI 分析邏輯
+}
+```
+
+3. **通知管理**
+```swift
+private func sendImmediateNotification(message: Message, reasoning: String) {
+    // 即時通知邏輯
+}
+
+private func scheduleDelayedNotification(message: Message) {
+    // 延遲通知邏輯
+}
+```
+
 ##聯繫方式
 如有任何問題，請聯繫：[rayc57429@gmail.com]
 
