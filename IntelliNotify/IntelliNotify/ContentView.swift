@@ -2,12 +2,7 @@ import SwiftUI
 import Foundation
 import UserNotifications
 import Combine
-
-#if os(iOS)
-import DeviceActivity
-import FamilyControls
-import ManagedSettings
-#endif
+import EventKit
 
 #if canImport(MessageUI)
 import MessageUI
@@ -29,12 +24,10 @@ struct Message: Identifiable, Codable {
         self.timestamp = timestamp
     }
     
-    // 自定義 CodingKeys 來處理編碼/解碼
     enum CodingKeys: String, CodingKey {
         case id, content, sender, timestamp, priority, isProcessed
     }
     
-    // 自定義初始化器用於解碼
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -77,27 +70,53 @@ enum MessagePriority: String, Codable, CaseIterable {
 enum WorkStatus: String, Codable {
     case working = "working"
     case resting = "resting"
-    case offline = "offline"
+    case inMeeting = "inMeeting"
+    case free = "free"
     case unknown = "unknown"
     
     var displayName: String {
         switch self {
         case .working: return "工作中"
         case .resting: return "休息中"
-        case .offline: return "離線"
+        case .inMeeting: return "會議中"
+        case .free: return "空閒"
         case .unknown: return "未知"
         }
     }
 }
 
-struct UserActivityData: Codable {
-    let currentApp: String?
-    let screenTime: TimeInterval
-    let workApps: [String]
-    let timestamp: Date
-    let deviceType: String // iPhone, iPad, MacBook
+// EventKit 相關模型
+struct CalendarEvent: Identifiable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let notes: String?
+    let location: String?
+    let calendarTitle: String
+    let isAllDay: Bool
+    
+    init(from ekEvent: EKEvent) {
+        self.id = ekEvent.eventIdentifier
+        self.title = ekEvent.title
+        self.startDate = ekEvent.startDate
+        self.endDate = ekEvent.endDate
+        self.notes = ekEvent.notes
+        self.location = ekEvent.location
+        self.calendarTitle = ekEvent.calendar.title
+        self.isAllDay = ekEvent.isAllDay
+    }
 }
 
+struct UserActivityData: Codable {
+    let currentEvent: String?
+    let workStatus: WorkStatus
+    let timestamp: Date
+    let deviceType: String
+    let upcomingEvents: [String]
+}
+
+// Gemini API 相關結構保持不變
 struct GeminiRequest: Codable {
     let contents: [GeminiContent]
     let generationConfig: GeminiGenerationConfig
@@ -134,18 +153,216 @@ struct AnalysisResult: Codable {
     let confidence: Double
 }
 
+// MARK: - API 設定管理
+class APISettingsManager: ObservableObject {
+    @Published var apiKey: String = ""
+    @Published var isAPIConfigured: Bool = false
+    
+    private let userDefaults = UserDefaults.standard
+    private let apiKeyKey = "GeminiAPIKey"
+    
+    init() {
+        loadAPIKey()
+    }
+    
+    func saveAPIKey(_ key: String) {
+        apiKey = key
+        isAPIConfigured = !key.isEmpty
+        userDefaults.set(key, forKey: apiKeyKey)
+    }
+    
+    private func loadAPIKey() {
+        apiKey = userDefaults.string(forKey: apiKeyKey) ?? ""
+        isAPIConfigured = !apiKey.isEmpty
+    }
+    
+    func clearAPIKey() {
+        apiKey = ""
+        isAPIConfigured = false
+        userDefaults.removeObject(forKey: apiKeyKey)
+    }
+}
+
+// MARK: - EventKit 服務
+class CalendarService: ObservableObject {
+    @Published var events: [CalendarEvent] = []
+    @Published var authorizationStatus: EKAuthorizationStatus = .notDetermined
+    @Published var isAuthorized: Bool = false
+    @Published var currentWorkStatus: WorkStatus = .unknown
+    
+    private let eventStore = EKEventStore()
+    
+    init() {
+        checkAuthorizationStatus()
+    }
+    
+    func checkAuthorizationStatus() {
+        authorizationStatus = EKEventStore.authorizationStatus(for: .event)
+        isAuthorized = authorizationStatus == .authorized
+        
+        if isAuthorized {
+            loadEvents()
+        }
+    }
+    
+    func requestCalendarAccess() {
+        eventStore.requestAccess(to: .event) { [weak self] granted, error in
+            DispatchQueue.main.async {
+                self?.authorizationStatus = EKEventStore.authorizationStatus(for: .event)
+                self?.isAuthorized = granted
+                
+                if granted {
+                    self?.loadEvents()
+                } else {
+                    print("行事曆存取被拒絕: \(error?.localizedDescription ?? "未知錯誤")")
+                }
+            }
+        }
+    }
+    
+    func loadEvents() {
+        guard isAuthorized else { return }
+        
+        let calendar = Calendar.current
+        let startDate = calendar.startOfDay(for: Date())
+        let endDate = calendar.date(byAdding: .day, value: 7, to: startDate) ?? Date()
+        
+        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
+        let ekEvents = eventStore.events(matching: predicate)
+        
+        events = ekEvents.map { CalendarEvent(from: $0) }
+        updateWorkStatus()
+    }
+    
+    private func updateWorkStatus() {
+        let now = Date()
+        let currentEvents = events.filter { event in
+            now >= event.startDate && now <= event.endDate
+        }
+        
+        if !currentEvents.isEmpty {
+            // 如果有正在進行的事件，檢查是否為工作相關
+            let hasWorkEvent = currentEvents.contains { event in
+                isWorkRelatedEvent(event)
+            }
+            
+            currentWorkStatus = hasWorkEvent ? .working : .inMeeting
+        } else {
+            // 檢查接下來一小時內是否有事件
+            let oneHourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now
+            let upcomingEvents = events.filter { event in
+                event.startDate >= now && event.startDate <= oneHourLater
+            }
+            
+            currentWorkStatus = upcomingEvents.isEmpty ? .free : .resting
+        }
+    }
+    
+    private func isWorkRelatedEvent(_ event: CalendarEvent) -> Bool {
+        let workKeywords = ["會議", "meeting", "工作", "work", "專案", "project", "客戶", "client", "討論", "review"]
+        let eventText = (event.title + " " + (event.notes ?? "")).lowercased()
+        
+        return workKeywords.contains { keyword in
+            eventText.contains(keyword.lowercased())
+        }
+    }
+    
+    func createEvent(title: String, startDate: Date, endDate: Date, notes: String? = nil, location: String? = nil) throws {
+        guard isAuthorized else {
+            throw NSError(domain: "Calendar", code: 1, userInfo: [NSLocalizedDescriptionKey: "沒有行事曆權限"])
+        }
+        
+        let event = EKEvent(eventStore: eventStore)
+        event.title = title
+        event.startDate = startDate
+        event.endDate = endDate
+        event.notes = notes
+        event.location = location
+        event.calendar = eventStore.defaultCalendarForNewEvents
+        
+        try eventStore.save(event, span: .thisEvent)
+        loadEvents() // 重新載入事件
+    }
+    
+    func updateEvent(eventId: String, title: String? = nil, startDate: Date? = nil, endDate: Date? = nil, notes: String? = nil, location: String? = nil) throws {
+        guard isAuthorized else {
+            throw NSError(domain: "Calendar", code: 1, userInfo: [NSLocalizedDescriptionKey: "沒有行事曆權限"])
+        }
+        
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw NSError(domain: "Calendar", code: 2, userInfo: [NSLocalizedDescriptionKey: "找不到指定的事件"])
+        }
+        
+        if let title = title { event.title = title }
+        if let startDate = startDate { event.startDate = startDate }
+        if let endDate = endDate { event.endDate = endDate }
+        if let notes = notes { event.notes = notes }
+        if let location = location { event.location = location }
+        
+        try eventStore.save(event, span: .thisEvent)
+        loadEvents() // 重新載入事件
+    }
+    
+    func deleteEvent(eventId: String) throws {
+        guard isAuthorized else {
+            throw NSError(domain: "Calendar", code: 1, userInfo: [NSLocalizedDescriptionKey: "沒有行事曆權限"])
+        }
+        
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw NSError(domain: "Calendar", code: 2, userInfo: [NSLocalizedDescriptionKey: "找不到指定的事件"])
+        }
+        
+        try eventStore.remove(event, span: .thisEvent)
+        loadEvents() // 重新載入事件
+    }
+    
+    func getCurrentActivityData() -> UserActivityData {
+        let now = Date()
+        let currentEvent = events.first { event in
+            now >= event.startDate && now <= event.endDate
+        }
+        
+        let upcomingEvents = events.filter { event in
+            let oneHourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now
+            return event.startDate >= now && event.startDate <= oneHourLater
+        }.map { $0.title }
+        
+        return UserActivityData(
+            currentEvent: currentEvent?.title,
+            workStatus: currentWorkStatus,
+            timestamp: Date(),
+            deviceType: getDeviceType(),
+            upcomingEvents: upcomingEvents
+        )
+    }
+    
+    private func getDeviceType() -> String {
+        #if os(iOS)
+        return UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        #elseif os(macOS)
+        return "MacBook"
+        #else
+        return "Unknown"
+        #endif
+    }
+}
+
 // MARK: - Gemini API 服務
 class GeminiService: ObservableObject {
-    private let apiKey = "" // 請替換為實際的 API Key
+    @Published var apiSettingsManager = APISettingsManager()
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     
     func analyzeMessageAndWorkStatus(
         message: Message,
         activityData: UserActivityData,
-        screenTimeData: [String: TimeInterval],
         completion: @escaping (Result<AnalysisResult, Error>) -> Void
     ) {
-        let prompt = createAnalysisPrompt(message: message, activityData: activityData, screenTimeData: screenTimeData)
+        guard !apiSettingsManager.apiKey.isEmpty else {
+            completion(.failure(NSError(domain: "API Key not configured", code: 0, userInfo: [NSLocalizedDescriptionKey: "請先設定 Gemini API Key"])))
+            return
+        }
+        
+        let prompt = createAnalysisPrompt(message: message, activityData: activityData)
         
         let request = GeminiRequest(
             contents: [GeminiContent(parts: [GeminiPart(text: prompt)])],
@@ -157,7 +374,7 @@ class GeminiService: ObservableObject {
             )
         )
         
-        guard let url = URL(string: "\(baseURL)?key=\(apiKey)") else {
+        guard let url = URL(string: "\(baseURL)?key=\(apiSettingsManager.apiKey)") else {
             completion(.failure(NSError(domain: "Invalid URL", code: 0, userInfo: nil)))
             return
         }
@@ -199,8 +416,8 @@ class GeminiService: ObservableObject {
         }.resume()
     }
     
-    private func createAnalysisPrompt(message: Message, activityData: UserActivityData, screenTimeData: [String: TimeInterval]) -> String {
-        let screenTimeText = screenTimeData.map { "\($0.key): \(Int($0.value/60))分鐘" }.joined(separator: ", ")
+    private func createAnalysisPrompt(message: Message, activityData: UserActivityData) -> String {
+        let upcomingEventsText = activityData.upcomingEvents.isEmpty ? "無" : activityData.upcomingEvents.joined(separator: ", ")
         
         return """
         請分析以下訊息和用戶狀態，並以JSON格式回覆：
@@ -211,13 +428,10 @@ class GeminiService: ObservableObject {
         - 時間：\(message.timestamp)
 
         用戶活動數據：
-        - 當前使用的應用程式：\(activityData.currentApp ?? "未知")
+        - 當前事件：\(activityData.currentEvent ?? "無")
+        - 工作狀態：\(activityData.workStatus.displayName)
         - 設備類型：\(activityData.deviceType)
-        - 螢幕使用時間：\(Int(activityData.screenTime/60))分鐘
-        - 工作相關應用程式：\(activityData.workApps.joined(separator: ", "))
-
-        今日應用使用時間：
-        \(screenTimeText)
+        - 接下來一小時的事件：\(upcomingEventsText)
 
         請根據以下標準分析：
 
@@ -228,20 +442,21 @@ class GeminiService: ObservableObject {
         - low: 低（如：廣告、無關緊要的通知）
 
         2. 工作狀態判斷：
-        - working: 正在使用工作相關應用程式
-        - resting: 在休息或使用娛樂應用程式
-        - offline: 長時間未使用設備
+        - working: 正在工作或在工作相關會議中
+        - inMeeting: 在會議中但非工作相關
+        - resting: 休息中但即將有事件
+        - free: 完全空閒
         - unknown: 無法確定
 
         3. 是否立即通知：
         - 如果訊息是緊急的，無論工作狀態都應立即通知
-        - 如果訊息重要但用戶正在工作，可以延遲通知
-        - 如果用戶在休息，重要訊息可以立即通知
+        - 如果訊息重要但用戶正在會議中，應延遲通知
+        - 如果用戶空閒，重要訊息可以立即通知
 
         請以此JSON格式回覆：
         {
             "messagePriority": "urgent|important|normal|low",
-            "workStatus": "working|resting|offline|unknown",
+            "workStatus": "working|inMeeting|resting|free|unknown",
             "shouldNotifyImmediately": true|false,
             "reasoning": "分析理由",
             "confidence": 0.0-1.0
@@ -250,7 +465,6 @@ class GeminiService: ObservableObject {
     }
     
     private func parseAnalysisResult(from text: String) -> AnalysisResult {
-        // 嘗試解析JSON回應
         if let jsonStart = text.range(of: "{"),
            let jsonEnd = text.range(of: "}", options: .backwards) {
             let jsonString = String(text[jsonStart.lowerBound...jsonEnd.upperBound])
@@ -260,7 +474,6 @@ class GeminiService: ObservableObject {
             }
         }
         
-        // 如果JSON解析失敗，返回默認值
         return AnalysisResult(
             messagePriority: "normal",
             workStatus: "unknown",
@@ -271,109 +484,20 @@ class GeminiService: ObservableObject {
     }
 }
 
-// MARK: - 設備活動監控服務
-class DeviceActivityService: ObservableObject {
-    @Published var currentWorkStatus: WorkStatus = .unknown
-    @Published var screenTimeData: [String: TimeInterval] = [:]
-    
-    private let workApps = [
-        "com.microsoft.Office.Word",
-        "com.microsoft.Office.Excel",
-        "com.microsoft.Office.PowerPoint",
-        "com.apple.mail",
-        "com.apple.MobileSMS",
-        "com.slack.Slack",
-        "com.microsoft.teams",
-        "com.zoom.ZoomRooms",
-        "com.notion.Notion",
-        "com.culturedcode.ThingsiPhone",
-        "com.omnigroup.OmniFocus3",
-        "com.apple.dt.Xcode"
-    ]
-    
-    func getCurrentActivityData() -> UserActivityData {
-        return UserActivityData(
-            currentApp: getCurrentApp(),
-            screenTime: getTotalScreenTime(),
-            workApps: workApps,
-            timestamp: Date(),
-            deviceType: getDeviceType()
-        )
-    }
-    
-    private func getCurrentApp() -> String? {
-        // 在實際應用中，這需要使用 DeviceActivity 框架
-        // 這裡返回模擬數據
-        return "com.apple.MobileSMS"
-    }
-    
-    private func getTotalScreenTime() -> TimeInterval {
-        // 在實際應用中，這需要使用 Screen Time API
-        return screenTimeData.values.reduce(0, +)
-    }
-    
-    private func getDeviceType() -> String {
-        #if os(iOS)
-        return UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
-        #elseif os(macOS)
-        return "MacBook"
-        #else
-        return "Unknown"
-        #endif
-    }
-    
-    func requestScreenTimeAccess() {
-        #if os(iOS)
-        if #available(iOS 15.0, *) {
-            Task {
-                do {
-                    try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-                    await MainActor.run {
-                        print("Screen Time access approved")
-                        self.startMonitoring()
-                    }
-                } catch {
-                    await MainActor.run {
-                        print("Screen Time access denied: \(error)")
-                    }
-                }
-            }
-        } else {
-            // iOS 15 以下版本的兼容处理
-            print("Screen Time API requires iOS 15.0 or later")
-            self.startMonitoring() // 使用模拟数据
-        }
-        #endif
-    }
-    
-    private func startMonitoring() {
-        // 實現螢幕時間監控邏輯
-        // 這裡添加模擬數據
-        DispatchQueue.main.async {
-            self.screenTimeData = [
-                "工作應用": 180 * 60, // 3小時
-                "社交應用": 45 * 60,  // 45分鐘
-                "娛樂應用": 30 * 60   // 30分鐘
-            ]
-        }
-    }
-}
-
 // MARK: - 訊息管理服務
 class MessageService: ObservableObject {
     @Published var messages: [Message] = []
     @Published var pendingMessages: [Message] = []
     
-    private let geminiService = GeminiService()
-    private let deviceService = DeviceActivityService()
+    let geminiService = GeminiService()
+    private let calendarService = CalendarService()
     
     func processIncomingMessage(_ message: Message) {
-        let activityData = deviceService.getCurrentActivityData()
+        let activityData = calendarService.getCurrentActivityData()
         
         geminiService.analyzeMessageAndWorkStatus(
             message: message,
-            activityData: activityData,
-            screenTimeData: deviceService.screenTimeData
+            activityData: activityData
         ) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
@@ -427,7 +551,6 @@ class MessageService: ObservableObject {
     }
     
     private func scheduleDelayedNotification(message: Message) {
-        // 延遲通知邏輯，可以根據工作狀態調整延遲時間
         let delay: TimeInterval = 30 * 60 // 30分鐘後通知
         
         let content = UNMutableNotificationContent()
@@ -449,16 +572,28 @@ class MessageService: ObservableObject {
 // MARK: - 主要視圖
 struct ContentView: View {
     @StateObject private var messageService = MessageService()
-    @StateObject private var deviceService = DeviceActivityService()
+    @StateObject private var calendarService = CalendarService()
     @State private var showingAddMessage = false
+    @State private var showingAPISettings = false
+    @State private var showingCalendarView = false
     @State private var newMessageContent = ""
     @State private var newMessageSender = ""
     
     var body: some View {
         NavigationView {
             VStack {
+                // API 狀態提示
+                if !messageService.geminiService.apiSettingsManager.isAPIConfigured {
+                    APIStatusBanner(showingAPISettings: $showingAPISettings)
+                }
+                
+                // 行事曆權限狀態提示
+                if !calendarService.isAuthorized {
+                    CalendarPermissionBanner(calendarService: calendarService)
+                }
+                
                 // 狀態卡片
-                StatusCard(deviceService: deviceService)
+                StatusCard(calendarService: calendarService)
                 
                 // 訊息列表
                 List {
@@ -479,7 +614,21 @@ struct ContentView: View {
             }
             .navigationTitle("智能訊息管理")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        showingCalendarView = true
+                    }) {
+                        Image(systemName: "calendar")
+                            .foregroundColor(calendarService.isAuthorized ? .blue : .gray)
+                    }
+                    
+                    Button(action: {
+                        showingAPISettings = true
+                    }) {
+                        Image(systemName: messageService.geminiService.apiSettingsManager.isAPIConfigured ? "key.fill" : "key")
+                            .foregroundColor(messageService.geminiService.apiSettingsManager.isAPIConfigured ? .green : .orange)
+                    }
+                    
                     Button("添加測試訊息") {
                         showingAddMessage = true
                     }
@@ -502,10 +651,15 @@ struct ContentView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingAPISettings) {
+                APISettingsView(apiSettingsManager: messageService.geminiService.apiSettingsManager)
+            }
+            .sheet(isPresented: $showingCalendarView) {
+                CalendarManagementView(calendarService: calendarService)
+            }
         }
         .onAppear {
             requestNotificationPermission()
-            deviceService.requestScreenTimeAccess()
         }
     }
     
@@ -520,9 +674,75 @@ struct ContentView: View {
     }
 }
 
+// MARK: - 行事曆權限橫幅
+struct CalendarPermissionBanner: View {
+    @ObservedObject var calendarService: CalendarService
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "calendar.badge.exclamationmark")
+                .foregroundColor(.blue)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("需要行事曆權限")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Text("允許存取行事曆以提供更精確的工作狀態分析")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Button("授權") {
+                calendarService.requestCalendarAccess()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding()
+        .background(Color.blue.opacity(0.1))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - API 狀態橫幅
+struct APIStatusBanner: View {
+    @Binding var showingAPISettings: Bool
+    
+    var body: some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("需要設定 API Key")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                Text("點擊設定 Gemini API Key 以啟用智能分析功能")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Button("設定") {
+                showingAPISettings = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
 // MARK: - 狀態卡片視圖
 struct StatusCard: View {
-    @ObservedObject var deviceService: DeviceActivityService
+    @ObservedObject var calendarService: CalendarService
     
     var body: some View {
         VStack(spacing: 16) {
@@ -531,36 +751,40 @@ struct StatusCard: View {
                     Text("工作狀態")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(deviceService.currentWorkStatus.displayName)
+                    Text(calendarService.currentWorkStatus.displayName)
                         .font(.headline)
                         .foregroundColor(.primary)
                 }
                 Spacer()
                 
                 VStack(alignment: .trailing) {
-                    Text("螢幕時間")
+                    Text("今日事件")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("\(Int(deviceService.screenTimeData.values.reduce(0, +) / 3600))小時")
+                    Text("\(calendarService.events.filter { Calendar.current.isDateInToday($0.startDate) }.count)個")
                         .font(.headline)
                         .foregroundColor(.primary)
                 }
             }
             
-            if !deviceService.screenTimeData.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("應用使用時間")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    ForEach(Array(deviceService.screenTimeData.keys), id: \.self) { app in
-                        HStack {
-                            Text(app)
-                                .font(.caption)
-                            Spacer()
-                            Text("\(Int((deviceService.screenTimeData[app] ?? 0) / 60))分鐘")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+            if calendarService.isAuthorized {
+                let todayEvents = calendarService.events.filter { Calendar.current.isDateInToday($0.startDate) }.prefix(3)
+                if !todayEvents.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("今日行程")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        ForEach(Array(todayEvents), id: \.id) { event in
+                            HStack {
+                                Text(event.title)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(event.startDate, style: .time)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                 }
@@ -570,6 +794,531 @@ struct StatusCard: View {
         .background(Color.gray.opacity(0.1))
         .cornerRadius(12)
         .padding(.horizontal)
+    }
+}
+
+// MARK: - 行事曆管理視圖
+struct CalendarManagementView: View {
+    @ObservedObject var calendarService: CalendarService
+    @Environment(\.presentationMode) var presentationMode
+    @State private var showingAddEvent = false
+    @State private var selectedEvent: CalendarEvent?
+    @State private var showingEventDetail = false
+    
+    var body: some View {
+        NavigationView {
+            Group {
+                if calendarService.isAuthorized {
+                    List {
+                        Section("近期事件") {
+                            ForEach(calendarService.events, id: \.id) { event in
+                                CalendarEventRow(event: event) {
+                                    selectedEvent = event
+                                    showingEventDetail = true
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue)
+                        
+                        Text("需要行事曆權限")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        
+                        Text("請允許此應用程式存取您的行事曆以檢視和管理事件")
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                        
+                        Button("授權存取") {
+                            calendarService.requestCalendarAccess()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("行事曆管理")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("關閉") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                
+                if calendarService.isAuthorized {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("新增事件") {
+                            showingAddEvent = true
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showingAddEvent) {
+                AddEventView(calendarService: calendarService)
+            }
+            .sheet(isPresented: $showingEventDetail) {
+                if let event = selectedEvent {
+                    EventDetailView(event: event, calendarService: calendarService)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 行事曆事件行視圖
+struct CalendarEventRow: View {
+    let event: CalendarEvent
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(event.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    if event.isAllDay {
+                        Text("全天")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.2))
+                            .foregroundColor(.blue)
+                            .cornerRadius(4)
+                    }
+                }
+                
+                HStack {
+                    Text(event.startDate, style: .date)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if !event.isAllDay {
+                        Text(event.startDate, style: .time)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("-")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(event.endDate, style: .time)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(event.calendarTitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                if let location = event.location, !location.isEmpty {
+                    HStack {
+                        Image(systemName: "location")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(location)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 新增事件視圖
+struct AddEventView: View {
+    @ObservedObject var calendarService: CalendarService
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var title = ""
+    @State private var startDate = Date()
+    @State private var endDate = Date().addingTimeInterval(3600) // 1小時後
+    @State private var notes = ""
+    @State private var location = ""
+    @State private var isAllDay = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("事件詳情") {
+                    TextField("標題", text: $title)
+                    
+                    Toggle("全天事件", isOn: $isAllDay)
+                    
+                    DatePicker("開始時間", selection: $startDate, displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
+                    
+                    DatePicker("結束時間", selection: $endDate, displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
+                    
+                    TextField("地點（選填）", text: $location)
+                    
+                    TextField("備註（選填）", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+            }
+            .navigationTitle("新增事件")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("儲存") {
+                        saveEvent()
+                    }
+                    .disabled(title.isEmpty)
+                }
+            }
+            .alert("錯誤", isPresented: $showingError) {
+                Button("確定") { }
+            } message: {
+                Text(errorMessage)
+            }
+        }
+    }
+    
+    private func saveEvent() {
+        do {
+            try calendarService.createEvent(
+                title: title,
+                startDate: startDate,
+                endDate: endDate,
+                notes: notes.isEmpty ? nil : notes,
+                location: location.isEmpty ? nil : location
+            )
+            presentationMode.wrappedValue.dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+}
+
+// MARK: - 事件詳情視圖
+struct EventDetailView: View {
+    let event: CalendarEvent
+    @ObservedObject var calendarService: CalendarService
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var showingEditView = false
+    @State private var showingDeleteAlert = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("事件詳情") {
+                    DetailRow(title: "標題", value: event.title)
+                    
+                    DetailRow(title: "開始時間", value: formatDate(event.startDate, isAllDay: event.isAllDay))
+                    
+                    DetailRow(title: "結束時間", value: formatDate(event.endDate, isAllDay: event.isAllDay))
+                    
+                    if let location = event.location, !location.isEmpty {
+                        DetailRow(title: "地點", value: location)
+                    }
+                    
+                    DetailRow(title: "行事曆", value: event.calendarTitle)
+                    
+                    if event.isAllDay {
+                        DetailRow(title: "類型", value: "全天事件")
+                    }
+                }
+                
+                if let notes = event.notes, !notes.isEmpty {
+                    Section("備註") {
+                        Text(notes)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Section {
+                    Button("編輯事件") {
+                        showingEditView = true
+                    }
+                    
+                    Button("刪除事件") {
+                        showingDeleteAlert = true
+                    }
+                    .foregroundColor(.red)
+                }
+            }
+            .navigationTitle("事件詳情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("關閉") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showingEditView) {
+                EditEventView(event: event, calendarService: calendarService)
+            }
+            .alert("確認刪除", isPresented: $showingDeleteAlert) {
+                Button("取消", role: .cancel) { }
+                Button("刪除", role: .destructive) {
+                    deleteEvent()
+                }
+            } message: {
+                Text("確定要刪除這個事件嗎？此操作無法復原。")
+            }
+            .alert("錯誤", isPresented: $showingError) {
+                Button("確定") { }
+            } message: {
+                Text(errorMessage)
+            }
+        }
+    }
+    
+    private func formatDate(_ date: Date, isAllDay: Bool) -> String {
+        let formatter = DateFormatter()
+        if isAllDay {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+        } else {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+        }
+        return formatter.string(from: date)
+    }
+    
+    private func deleteEvent() {
+        do {
+            try calendarService.deleteEvent(eventId: event.id)
+            presentationMode.wrappedValue.dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+}
+
+// MARK: - 詳情行視圖
+struct DetailRow: View {
+    let title: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - 編輯事件視圖
+struct EditEventView: View {
+    let event: CalendarEvent
+    @ObservedObject var calendarService: CalendarService
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var title: String
+    @State private var startDate: Date
+    @State private var endDate: Date
+    @State private var notes: String
+    @State private var location: String
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
+    init(event: CalendarEvent, calendarService: CalendarService) {
+        self.event = event
+        self.calendarService = calendarService
+        self._title = State(initialValue: event.title)
+        self._startDate = State(initialValue: event.startDate)
+        self._endDate = State(initialValue: event.endDate)
+        self._notes = State(initialValue: event.notes ?? "")
+        self._location = State(initialValue: event.location ?? "")
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("事件詳情") {
+                    TextField("標題", text: $title)
+                    
+                    DatePicker("開始時間", selection: $startDate, displayedComponents: event.isAllDay ? [.date] : [.date, .hourAndMinute])
+                    
+                    DatePicker("結束時間", selection: $endDate, displayedComponents: event.isAllDay ? [.date] : [.date, .hourAndMinute])
+                    
+                    TextField("地點（選填）", text: $location)
+                    
+                    TextField("備註（選填）", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+            }
+            .navigationTitle("編輯事件")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("儲存") {
+                        saveChanges()
+                    }
+                    .disabled(title.isEmpty)
+                }
+            }
+            .alert("錯誤", isPresented: $showingError) {
+                Button("確定") { }
+            } message: {
+                Text(errorMessage)
+            }
+        }
+    }
+    
+    private func saveChanges() {
+        do {
+            try calendarService.updateEvent(
+                eventId: event.id,
+                title: title,
+                startDate: startDate,
+                endDate: endDate,
+                notes: notes.isEmpty ? nil : notes,
+                location: location.isEmpty ? nil : location
+            )
+            presentationMode.wrappedValue.dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+}
+
+// MARK: - API 設定視圖
+struct APISettingsView: View {
+    @ObservedObject var apiSettingsManager: APISettingsManager
+    @Environment(\.presentationMode) var presentationMode
+    @State private var tempAPIKey: String = ""
+    @State private var showingDeleteConfirmation = false
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Gemini API 設定")) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("API Key")
+                            .font(.headline)
+                        
+                        SecureField("請輸入您的 Gemini API Key", text: $tempAPIKey)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        
+                        if apiSettingsManager.isAPIConfigured {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("API Key 已設定")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                            }
+                        }
+                        
+                        Text("您可以從 Google AI Studio 獲取免費的 API Key")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section(header: Text("使用說明")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        InfoRow(icon: "1.circle.fill", title: "獲取 API Key", description: "前往 Google AI Studio 註冊並獲取免費的 API Key")
+                        InfoRow(icon: "2.circle.fill", title: "輸入 API Key", description: "將獲取的 API Key 貼上到上方欄位中")
+                        InfoRow(icon: "3.circle.fill", title: "開始使用", description: "設定完成後即可使用智能訊息分析功能")
+                    }
+                }
+                
+                if apiSettingsManager.isAPIConfigured {
+                    Section {
+                        Button(action: {
+                            showingDeleteConfirmation = true
+                        }) {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("清除 API Key")
+                            }
+                            .foregroundColor(.red)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("API 設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("儲存") {
+                        apiSettingsManager.saveAPIKey(tempAPIKey)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .disabled(tempAPIKey.isEmpty)
+                }
+            }
+            .alert("確認刪除", isPresented: $showingDeleteConfirmation) {
+                Button("取消", role: .cancel) { }
+                Button("刪除", role: .destructive) {
+                    apiSettingsManager.clearAPIKey()
+                    tempAPIKey = ""
+                }
+            } message: {
+                Text("確定要清除已儲存的 API Key 嗎？")
+            }
+        }
+        .onAppear {
+            tempAPIKey = apiSettingsManager.apiKey
+        }
+    }
+}
+
+// MARK: - 資訊行視圖
+struct InfoRow: View {
+    let icon: String
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.blue)
+                .frame(width: 20)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -640,5 +1389,6 @@ struct AddMessageView: View {
     }
 }
 
-// MARK: - 應用程式入口
-//aa
+#Preview {
+    ContentView()
+}
